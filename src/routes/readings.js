@@ -27,6 +27,13 @@ router.post('/', async (req, res) => {
       data: reading
     });
   } catch (error) {
+    // Handle duplicate reading error specifically
+    if (error.message && error.message.includes('Duplicate reading')) {
+      return res.status(409).json({
+        success: false,
+        error: error.message
+      });
+    }
     res.status(400).json({
       success: false,
       error: error.message
@@ -47,70 +54,6 @@ router.get('/:id', async (req, res) => {
     });
   } catch (error) {
     res.status(404).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/**
- * Get readings for a device
- * GET /api/devices/:deviceId/readings
- */
-router.get('/device/:deviceId', async (req, res) => {
-  try {
-    const filter = {};
-    if (req.query.from_date) filter.from_date = req.query.from_date;
-    if (req.query.to_date) filter.to_date = req.query.to_date;
-    if (req.query.limit) filter.limit = req.query.limit;
-
-    const readings = await bloodPressureLogger.getDeviceReadings(req.params.deviceId, filter);
-    res.json({
-      success: true,
-      count: readings.length,
-      data: readings
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/**
- * Get latest reading for a device
- * GET /api/devices/:deviceId/readings/latest
- */
-router.get('/device/:deviceId/latest', async (req, res) => {
-  try {
-    const reading = await bloodPressureLogger.getLatestReading(req.params.deviceId);
-    res.json({
-      success: true,
-      data: reading
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/**
- * Get statistics for device readings
- * GET /api/devices/:deviceId/readings/stats
- */
-router.get('/device/:deviceId/stats', async (req, res) => {
-  try {
-    const timeframe = req.query.timeframe || '7d';
-    const stats = await bloodPressureLogger.getReadingStatistics(req.params.deviceId, timeframe);
-    res.json({
-      success: true,
-      data: stats
-    });
-  } catch (error) {
-    res.status(400).json({
       success: false,
       error: error.message
     });

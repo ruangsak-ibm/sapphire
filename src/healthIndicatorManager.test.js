@@ -1,125 +1,167 @@
 /**
- * Integration tests for health indicator manager
+ * Integration tests for health indicator manager - tests the real implementation
  */
 const { test } = require('node:test');
 const assert = require('node:assert');
+const database = require('./database');
+const deviceManager = require('./deviceManager');
+const healthIndicatorManager = require('./healthIndicatorManager');
 
-// Test helper
-class TestHealthIndicatorManager {
-  constructor() {
-    this.indicators = [];
-  }
+// Initialize database before tests
+test('HealthIndicatorManager - setup database', async () => {
+  await database.initialize();
+  assert.ok(true, 'database initialized');
+});
 
-  async recordIndicator(deviceId, indicatorData) {
-    if (!deviceId) throw new Error('Device ID is required');
-    if (!indicatorData) throw new Error('Invalid indicator data');
-
-    const { indicator_type, value, unit } = indicatorData;
-
-    if (!indicator_type) throw new Error('Indicator type is required');
-    if (value === undefined) throw new Error('Indicator value is required');
-    if (typeof value !== 'number') throw new Error('Indicator value must be a number');
-
-    const indicator = {
-      id: `indicator_${Date.now()}`,
-      device_id: deviceId,
-      indicator_type,
-      value,
-      unit: unit || null,
-      recorded_at: new Date().toISOString()
-    };
-
-    this.indicators.push(indicator);
-    return indicator;
-  }
-
-  async getDeviceIndicators(deviceId) {
-    return this.indicators.filter(i => i.device_id === deviceId);
-  }
-
-  async deleteIndicator(indicatorId) {
-    const index = this.indicators.findIndex(i => i.id === indicatorId);
-    if (index === -1) throw new Error(`Indicator not found: ${indicatorId}`);
-    this.indicators.splice(index, 1);
-    return { deleted: true, indicatorId };
-  }
+// Helper to create a test device
+async function createTestDevice(name) {
+  return deviceManager.registerDevice({
+    name,
+    type: 'blood_pressure',
+    manufacturer: 'Test',
+    model: 'Test Model',
+    serial_number: 'SN_HIM_' + Date.now() + '_' + Math.random()
+  });
 }
 
 test('HealthIndicatorManager - records indicator', async () => {
-  const manager = new TestHealthIndicatorManager();
-  const indicator = await manager.recordIndicator('device_1', {
+  const device = await createTestDevice('HIM Test Device 1');
+  
+  const indicator = await healthIndicatorManager.recordIndicator(device.id, {
     indicator_type: 'oxygen_level',
     value: 98.5,
     unit: '%'
   });
 
   assert.ok(indicator.id);
+  assert.ok(indicator.id.startsWith('indicator_'));
   assert.strictEqual(indicator.indicator_type, 'oxygen_level');
   assert.strictEqual(indicator.value, 98.5);
   assert.strictEqual(indicator.unit, '%');
+  assert.strictEqual(indicator.device_id, device.id);
 });
 
 test('HealthIndicatorManager - requires device ID', async () => {
-  const manager = new TestHealthIndicatorManager();
   await assert.rejects(
-    () => manager.recordIndicator(null, { indicator_type: 'test', value: 100 }),
+    () => healthIndicatorManager.recordIndicator(null, { indicator_type: 'test', value: 100 }),
     /Device ID is required/
   );
 });
 
-test('HealthIndicatorManager - requires indicator type', async () => {
-  const manager = new TestHealthIndicatorManager();
+test('HealthIndicatorManager - requires valid device', async () => {
   await assert.rejects(
-    () => manager.recordIndicator('device_1', { value: 100 }),
+    () => healthIndicatorManager.recordIndicator('nonexistent_device', { indicator_type: 'test', value: 100 }),
+    /Device not found/
+  );
+});
+
+test('HealthIndicatorManager - requires indicator type', async () => {
+  const device = await createTestDevice('HIM Test Device 2');
+  
+  await assert.rejects(
+    () => healthIndicatorManager.recordIndicator(device.id, { value: 100 }),
     /Indicator type is required/
   );
 });
 
 test('HealthIndicatorManager - requires value', async () => {
-  const manager = new TestHealthIndicatorManager();
+  const device = await createTestDevice('HIM Test Device 3');
+  
   await assert.rejects(
-    () => manager.recordIndicator('device_1', { indicator_type: 'test' }),
+    () => healthIndicatorManager.recordIndicator(device.id, { indicator_type: 'test' }),
     /Indicator value is required/
   );
 });
 
 test('HealthIndicatorManager - requires numeric value', async () => {
-  const manager = new TestHealthIndicatorManager();
+  const device = await createTestDevice('HIM Test Device 4');
+  
   await assert.rejects(
-    () => manager.recordIndicator('device_1', { indicator_type: 'test', value: 'invalid' }),
+    () => healthIndicatorManager.recordIndicator(device.id, { indicator_type: 'test', value: 'invalid' }),
     /must be a number/
   );
 });
 
-test('HealthIndicatorManager - gets device indicators', async () => {
-  const manager = new TestHealthIndicatorManager();
-  await manager.recordIndicator('device_1', { indicator_type: 'o2', value: 98 });
-  await manager.recordIndicator('device_1', { indicator_type: 'temp', value: 37 });
-  await manager.recordIndicator('device_2', { indicator_type: 'o2', value: 96 });
+test('HealthIndicatorManager - gets indicator by ID', async () => {
+  const device = await createTestDevice('HIM Test Device 5');
+  
+  const recorded = await healthIndicatorManager.recordIndicator(device.id, {
+    indicator_type: 'oxygen_level',
+    value: 97.5,
+    unit: '%'
+  });
 
-  const indicators = await manager.getDeviceIndicators('device_1');
-  assert.strictEqual(indicators.length, 2);
-  assert.ok(indicators.every(i => i.device_id === 'device_1'));
+  const indicator = await healthIndicatorManager.getIndicator(recorded.id);
+  assert.ok(indicator);
+  assert.strictEqual(indicator.id, recorded.id);
+  assert.strictEqual(indicator.value, 97.5);
+});
+
+test('HealthIndicatorManager - throws error for non-existent indicator', async () => {
+  await assert.rejects(
+    () => healthIndicatorManager.getIndicator('nonexistent_indicator'),
+    /Indicator not found/
+  );
+});
+
+test('HealthIndicatorManager - gets device indicators', async () => {
+  const device = await createTestDevice('HIM Test Device 6');
+  
+  await healthIndicatorManager.recordIndicator(device.id, { indicator_type: 'o2', value: 98 });
+  await healthIndicatorManager.recordIndicator(device.id, { indicator_type: 'temp', value: 37 });
+  
+  const indicators = await healthIndicatorManager.getDeviceIndicators(device.id);
+  assert.ok(Array.isArray(indicators));
+  assert.ok(indicators.length >= 2);
+  assert.ok(indicators.every(i => i.device_id === device.id));
+});
+
+test('HealthIndicatorManager - filters indicators by type', async () => {
+  const device = await createTestDevice('HIM Test Device 7');
+  
+  await healthIndicatorManager.recordIndicator(device.id, { indicator_type: 'o2', value: 98 });
+  await healthIndicatorManager.recordIndicator(device.id, { indicator_type: 'temp', value: 37 });
+  
+  const o2Indicators = await healthIndicatorManager.getDeviceIndicators(device.id, { 
+    indicator_type: 'o2' 
+  });
+  
+  assert.ok(o2Indicators.every(i => i.indicator_type === 'o2'));
+});
+
+test('HealthIndicatorManager - limits results', async () => {
+  const device = await createTestDevice('HIM Test Device 8');
+  
+  for (let i = 0; i < 5; i++) {
+    await healthIndicatorManager.recordIndicator(device.id, { indicator_type: 'o2', value: 98 + i });
+  }
+  
+  const indicators = await healthIndicatorManager.getDeviceIndicators(device.id, { limit: 2 });
+  assert.ok(indicators.length <= 2);
 });
 
 test('HealthIndicatorManager - deletes indicator', async () => {
-  const manager = new TestHealthIndicatorManager();
-  const indicator = await manager.recordIndicator('device_1', { 
-    indicator_type: 'test', 
-    value: 100 
+  const device = await createTestDevice('HIM Test Device 9');
+  
+  const indicator = await healthIndicatorManager.recordIndicator(device.id, {
+    indicator_type: 'test',
+    value: 100
   });
 
-  const result = await manager.deleteIndicator(indicator.id);
+  const result = await healthIndicatorManager.deleteIndicator(indicator.id);
   assert.ok(result.deleted);
+  assert.strictEqual(result.indicatorId, indicator.id);
 
-  const indicators = await manager.getDeviceIndicators('device_1');
-  assert.strictEqual(indicators.length, 0);
+  // Verify indicator is deleted
+  await assert.rejects(
+    () => healthIndicatorManager.getIndicator(indicator.id),
+    /Indicator not found/
+  );
 });
 
 test('HealthIndicatorManager - throws error deleting non-existent indicator', async () => {
-  const manager = new TestHealthIndicatorManager();
   await assert.rejects(
-    () => manager.deleteIndicator('nonexistent'),
+    () => healthIndicatorManager.deleteIndicator('nonexistent'),
     /Indicator not found/
   );
 });

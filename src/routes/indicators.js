@@ -54,30 +54,6 @@ router.get('/:id', async (req, res) => {
 });
 
 /**
- * Get indicators for a device
- * GET /api/devices/:deviceId/indicators
- */
-router.get('/device/:deviceId', async (req, res) => {
-  try {
-    const filter = {};
-    if (req.query.indicator_type) filter.indicator_type = req.query.indicator_type;
-    if (req.query.limit) filter.limit = req.query.limit;
-
-    const indicators = await healthIndicatorManager.getDeviceIndicators(req.params.deviceId, filter);
-    res.json({
-      success: true,
-      count: indicators.length,
-      data: indicators
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/**
  * Delete an indicator
  * DELETE /api/indicators/:id
  */

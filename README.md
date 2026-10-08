@@ -26,6 +26,28 @@ Automated Blood Pressure Device Sync & Logging system with intelligent health mo
 npm install
 ```
 
+## Configuration
+
+Set environment variables to customize:
+
+- `PORT`: Server port (default: 3000)
+- `API_KEY`: (Optional) API key for authentication. If not set, any non-empty Bearer token of at least 8 characters is accepted.
+- Database location can be modified in `src/database.js` (default: `data/health.db`)
+
+## Authentication
+
+All API endpoints (except `/health` and `/api`) require authentication via Bearer token in the Authorization header:
+
+```
+Authorization: Bearer YOUR_API_KEY
+```
+
+For development/testing, you can use any API key of at least 8 characters:
+
+```bash
+curl -H "Authorization: Bearer test_api_key_12345" http://localhost:3000/api/devices
+```
+
 ## Running the Application
 
 ### Development Mode
@@ -48,21 +70,51 @@ The server will start on `http://localhost:3000` (or the port specified by `PORT
 curl http://localhost:3000/health
 ```
 
+### API Documentation
+
+```bash
+curl http://localhost:3000/api
+```
+
 ## Testing
 
 Run all tests:
 
 ```bash
-node --test src/utils.test.js src/database.test.js src/deviceManager.test.js src/bloodPressureLogger.test.js src/healthIndicatorManager.test.js src/smartDashboard.test.js
+npm test
 ```
 
+This will run:
+- Unit tests for utility functions
+- Database integration tests
+- Device manager tests
+- Blood pressure logger tests
+- Health indicator manager tests
+- Smart dashboard tests
+
+All tests use the real implementations (not mocks) to ensure full coverage and correctness.
+
+### Test Coverage
+
+The test suite covers:
+- **83 automated tests** validating core functionality
+- Duplicate reading prevention (re-sent readings rejected)
+- Blood pressure categorization and alert logic
+- Device management and lifecycle
+- Data validation and error handling
+- Authentication requirement on protected endpoints
+- API response format consistency
+
 ## API Endpoints
+
+**Authentication Required**: All API endpoints require an `Authorization: Bearer <api-key>` header except for `/health` and `/api`.
 
 ### Device Management
 
 #### Register a Device
 ```
 POST /api/devices
+Authorization: Bearer YOUR_API_KEY
 Content-Type: application/json
 
 {
@@ -77,16 +129,19 @@ Content-Type: application/json
 #### List All Devices
 ```
 GET /api/devices?status=active
+Authorization: Bearer YOUR_API_KEY
 ```
 
 #### Get Device Details
 ```
 GET /api/devices/{deviceId}
+Authorization: Bearer YOUR_API_KEY
 ```
 
 #### Update Device Status
 ```
 PATCH /api/devices/{deviceId}/status
+Authorization: Bearer YOUR_API_KEY
 Content-Type: application/json
 
 {
@@ -97,6 +152,7 @@ Content-Type: application/json
 #### Delete Device
 ```
 DELETE /api/devices/{deviceId}
+Authorization: Bearer YOUR_API_KEY
 ```
 
 ### Blood Pressure Readings
@@ -104,6 +160,7 @@ DELETE /api/devices/{deviceId}
 #### Record a Reading
 ```
 POST /api/readings
+Authorization: Bearer YOUR_API_KEY
 Content-Type: application/json
 
 {
@@ -115,24 +172,30 @@ Content-Type: application/json
 }
 ```
 
+**Note**: Duplicate readings (same systolic, diastolic within 5 minutes) are rejected to prevent re-sent readings from being stored twice.
+
 #### Get a Reading
 ```
 GET /api/readings/{readingId}
+Authorization: Bearer YOUR_API_KEY
 ```
 
 #### Get Device Readings
 ```
 GET /api/devices/{deviceId}/readings?limit=50&from_date=2024-01-01
+Authorization: Bearer YOUR_API_KEY
 ```
 
 #### Get Latest Reading
 ```
 GET /api/devices/{deviceId}/readings/latest
+Authorization: Bearer YOUR_API_KEY
 ```
 
 #### Get Reading Statistics
 ```
 GET /api/devices/{deviceId}/readings/stats?timeframe=7d
+Authorization: Bearer YOUR_API_KEY
 ```
 
 Supported timeframes: `24h`, `7d`, `30d`, `90d`
@@ -140,6 +203,7 @@ Supported timeframes: `24h`, `7d`, `30d`, `90d`
 #### Delete a Reading
 ```
 DELETE /api/readings/{readingId}
+Authorization: Bearer YOUR_API_KEY
 ```
 
 ### Health Indicators
@@ -147,6 +211,7 @@ DELETE /api/readings/{readingId}
 #### Record an Indicator
 ```
 POST /api/indicators
+Authorization: Bearer YOUR_API_KEY
 Content-Type: application/json
 
 {
@@ -160,11 +225,13 @@ Content-Type: application/json
 #### Get Device Indicators
 ```
 GET /api/devices/{deviceId}/indicators?indicator_type=oxygen_level&limit=50
+Authorization: Bearer YOUR_API_KEY
 ```
 
 #### Delete Indicator
 ```
 DELETE /api/indicators/{indicatorId}
+Authorization: Bearer YOUR_API_KEY
 ```
 
 ### Smart Dashboard
@@ -172,6 +239,7 @@ DELETE /api/indicators/{indicatorId}
 #### Dashboard Overview
 ```
 GET /api/dashboard/overview
+Authorization: Bearer YOUR_API_KEY
 ```
 
 Returns:
@@ -182,6 +250,7 @@ Returns:
 #### Device Dashboard
 ```
 GET /api/dashboard/device/{deviceId}
+Authorization: Bearer YOUR_API_KEY
 ```
 
 Returns:
@@ -193,23 +262,27 @@ Returns:
 #### Health Alerts
 ```
 GET /api/dashboard/device/{deviceId}/alerts
+Authorization: Bearer YOUR_API_KEY
 ```
 
-Alert types:
-- `high_blood_pressure`: ≥140/90 mmHg
-- `elevated_blood_pressure`: 120-139 / 80-89 mmHg
-- `low_blood_pressure`: <90/<60 mmHg
-- `high_pulse`: >100 bpm
-- `low_pulse`: <60 bpm
+Alert types and thresholds:
+- `hypertensive_crisis`: > 180/120 mmHg (severity: critical)
+- `high_blood_pressure`: ≥ 140/90 mmHg (severity: high)
+- `elevated_blood_pressure`: 120-139/80-89 mmHg (severity: medium)
+- `low_blood_pressure`: < 90/60 mmHg (severity: high)
+- `high_pulse`: > 100 bpm (severity: medium)
+- `low_pulse`: < 60 bpm (severity: medium)
 
 #### Trend Analysis
 ```
 GET /api/dashboard/device/{deviceId}/trends?timeframe=7d
+Authorization: Bearer YOUR_API_KEY
 ```
 
 #### Export Readings
 ```
 GET /api/dashboard/device/{deviceId}/export?format=json
+Authorization: Bearer YOUR_API_KEY
 ```
 
 Formats: `json` or `csv`
@@ -322,15 +395,29 @@ Set environment variables to customize:
 
 ## Security Considerations
 
-- All inputs are validated before processing
-- SQL injection is prevented through parameterized queries
-- Blood pressure values are validated against medical standards
-- Duplicate device serial numbers are prevented
+- **Authentication**: All API endpoints (except `/health` and `/api`) require Bearer token authentication
+- **Input Validation**: All inputs are validated before processing
+- **SQL Injection Prevention**: Parameterized queries are used throughout
+- **Blood Pressure Validation**: Values are validated against medical standards
+- **Duplicate Prevention**: Device serial numbers and readings within 5 minutes are checked for uniqueness
+- **Rate Limiting**: Not implemented (recommended for production use)
+- **HTTPS**: Not enforced by the application (use a reverse proxy in production)
 
-## Future Enhancements
+### Future Security Enhancements
 
 - User authentication and authorization
 - Multi-user support with role-based access control
+- API rate limiting and throttling
+- Request signing for sensitive operations
+- Data encryption at rest and in transit
+- Audit logging of all API operations
+- HTTPS enforcement
+- API key expiration and rotation
+
+## Future Enhancements
+
+- User authentication and authorization with role-based access control
+- Multi-user support
 - Device firmware update management
 - Advanced analytics and machine learning predictions
 - Automated report generation
@@ -338,6 +425,8 @@ Set environment variables to customize:
 - Mobile app support
 - Real-time WebSocket updates
 - Data encryption at rest and in transit
+- API rate limiting and throttling
+- Comprehensive audit logging
 
 ## License
 

@@ -1,160 +1,204 @@
 /**
- * Integration tests for smart dashboard
+ * Integration tests for smart dashboard - tests the real implementation
  */
 const { test } = require('node:test');
 const assert = require('node:assert');
+const database = require('./database');
+const deviceManager = require('./deviceManager');
+const bloodPressureLogger = require('./bloodPressureLogger');
+const smartDashboard = require('./smartDashboard');
 
-// Test helper
-class TestSmartDashboard {
-  constructor() {
-    this.devices = [];
-    this.readings = [];
-  }
+// Initialize database before tests
+test('SmartDashboard - setup database', async () => {
+  await database.initialize();
+  assert.ok(true, 'database initialized');
+});
 
-  async getDashboardOverview() {
-    const activeDevices = this.devices.filter(d => d.status === 'active');
-    return {
-      timestamp: new Date().toISOString(),
-      devices: {
-        total: this.devices.length,
-        active: activeDevices.length
-      },
-      readings: {
-        total: this.readings.length
-      }
-    };
-  }
-
-  async getDeviceDashboard(deviceId) {
-    const device = this.devices.find(d => d.id === deviceId);
-    if (!device) throw new Error(`Device not found: ${deviceId}`);
-
-    const readings = this.readings.filter(r => r.device_id === deviceId);
-    const latestReading = readings.length > 0 ? readings[readings.length - 1] : null;
-
-    return {
-      device,
-      latestReading,
-      statistics: {
-        count: readings.length
-      }
-    };
-  }
-
-  async getHealthAlerts(deviceId) {
-    const device = this.devices.find(d => d.id === deviceId);
-    if (!device) throw new Error(`Device not found: ${deviceId}`);
-
-    const readings = this.readings.filter(r => r.device_id === deviceId);
-    if (readings.length === 0) return [];
-
-    const latestReading = readings[readings.length - 1];
-    const alerts = [];
-
-    if (latestReading.systolic >= 140 || latestReading.diastolic >= 90) {
-      alerts.push({
-        type: 'high_blood_pressure',
-        severity: 'high',
-        message: `High blood pressure detected: ${latestReading.systolic}/${latestReading.diastolic}`
-      });
-    }
-
-    if (latestReading.systolic >= 120 && latestReading.systolic < 140) {
-      alerts.push({
-        type: 'elevated_blood_pressure',
-        severity: 'medium',
-        message: `Elevated blood pressure: ${latestReading.systolic}/${latestReading.diastolic}`
-      });
-    }
-
-    return alerts;
-  }
-
-  async getTrendAnalysis(deviceId) {
-    const device = this.devices.find(d => d.id === deviceId);
-    if (!device) throw new Error(`Device not found: ${deviceId}`);
-
-    return {
-      device,
-      trend: {
-        systolic: 'increasing'
-      }
-    };
-  }
-
-  addDevice(device) {
-    this.devices.push(device);
-  }
-
-  addReading(reading) {
-    this.readings.push(reading);
-  }
+// Helper to create a test device
+async function createTestDevice(name) {
+  return deviceManager.registerDevice({
+    name,
+    type: 'blood_pressure',
+    manufacturer: 'Test',
+    model: 'Test Model',
+    serial_number: 'SN_SD_' + Date.now() + '_' + Math.random()
+  });
 }
 
 test('SmartDashboard - provides overview', async () => {
-  const dashboard = new TestSmartDashboard();
-  dashboard.addDevice({ id: 'device_1', name: 'Device 1', status: 'active' });
-  dashboard.addDevice({ id: 'device_2', name: 'Device 2', status: 'active' });
-
-  const overview = await dashboard.getDashboardOverview();
-  assert.strictEqual(overview.devices.total, 2);
-  assert.strictEqual(overview.devices.active, 2);
+  const overview = await smartDashboard.getDashboardOverview();
+  
+  assert.ok(overview.timestamp);
+  assert.ok(overview.devices);
+  assert.strictEqual(typeof overview.devices.total, 'number');
+  assert.strictEqual(typeof overview.devices.active, 'number');
+  assert.ok(overview.readings);
 });
 
 test('SmartDashboard - provides device dashboard', async () => {
-  const dashboard = new TestSmartDashboard();
-  dashboard.addDevice({ id: 'device_1', name: 'Device 1', status: 'active' });
-  dashboard.addReading({ device_id: 'device_1', systolic: 120, diastolic: 80 });
+  const device = await createTestDevice('SD Test Device 1');
+  await bloodPressureLogger.recordReading(device.id, { systolic: 120, diastolic: 80 });
+  
+  const dashboard = await smartDashboard.getDeviceDashboard(device.id);
+  
+  assert.ok(dashboard.device);
+  assert.strictEqual(dashboard.device.id, device.id);
+  assert.ok(dashboard.statistics);
+});
 
-  const deviceDash = await dashboard.getDeviceDashboard('device_1');
-  assert.ok(deviceDash.device);
-  assert.ok(deviceDash.latestReading);
+test('SmartDashboard - handles device without readings', async () => {
+  const device = await createTestDevice('SD Test Device 2');
+  
+  const dashboard = await smartDashboard.getDeviceDashboard(device.id);
+  assert.ok(dashboard.device);
+  assert.strictEqual(dashboard.latestReading, null);
+});
+
+test('SmartDashboard - throws error for non-existent device', async () => {
+  await assert.rejects(
+    () => smartDashboard.getDeviceDashboard('nonexistent_device'),
+    /Device not found/
+  );
+});
+
+test('SmartDashboard - detects hypertensive crisis alert', async () => {
+  const device = await createTestDevice('SD Test Device 3');
+  await bloodPressureLogger.recordReading(device.id, { systolic: 190, diastolic: 125 });
+  
+  const alerts = await smartDashboard.getHealthAlerts(device.id);
+  
+  assert.ok(Array.isArray(alerts));
+  assert.ok(alerts.length > 0);
+  const crisisAlert = alerts.find(a => a.type === 'hypertensive_crisis');
+  assert.ok(crisisAlert, 'should have hypertensive crisis alert');
+  assert.strictEqual(crisisAlert.severity, 'critical');
 });
 
 test('SmartDashboard - detects high blood pressure alert', async () => {
-  const dashboard = new TestSmartDashboard();
-  dashboard.addDevice({ id: 'device_1', name: 'Device 1' });
-  dashboard.addReading({ device_id: 'device_1', systolic: 150, diastolic: 95 });
-
-  const alerts = await dashboard.getHealthAlerts('device_1');
-  assert.strictEqual(alerts.length, 1);
-  assert.strictEqual(alerts[0].type, 'high_blood_pressure');
-  assert.strictEqual(alerts[0].severity, 'high');
+  const device = await createTestDevice('SD Test Device 4');
+  await bloodPressureLogger.recordReading(device.id, { systolic: 150, diastolic: 95 });
+  
+  const alerts = await smartDashboard.getHealthAlerts(device.id);
+  
+  const highAlert = alerts.find(a => a.type === 'high_blood_pressure');
+  assert.ok(highAlert, 'should have high blood pressure alert');
+  assert.strictEqual(highAlert.severity, 'high');
 });
 
 test('SmartDashboard - detects elevated blood pressure alert', async () => {
-  const dashboard = new TestSmartDashboard();
-  dashboard.addDevice({ id: 'device_1', name: 'Device 1' });
-  dashboard.addReading({ device_id: 'device_1', systolic: 125, diastolic: 80 });
+  const device = await createTestDevice('SD Test Device 5');
+  await bloodPressureLogger.recordReading(device.id, { systolic: 125, diastolic: 79 });
+  
+  const alerts = await smartDashboard.getHealthAlerts(device.id);
+  
+  const elevatedAlert = alerts.find(a => a.type === 'elevated_blood_pressure');
+  assert.ok(elevatedAlert, 'should have elevated blood pressure alert');
+  assert.strictEqual(elevatedAlert.severity, 'medium');
+});
 
-  const alerts = await dashboard.getHealthAlerts('device_1');
-  assert.strictEqual(alerts.length, 1);
-  assert.strictEqual(alerts[0].type, 'elevated_blood_pressure');
-  assert.strictEqual(alerts[0].severity, 'medium');
+test('SmartDashboard - detects low blood pressure alert', async () => {
+  const device = await createTestDevice('SD Test Device 6');
+  await bloodPressureLogger.recordReading(device.id, { systolic: 85, diastolic: 55 });
+  
+  const alerts = await smartDashboard.getHealthAlerts(device.id);
+  
+  const lowAlert = alerts.find(a => a.type === 'low_blood_pressure');
+  assert.ok(lowAlert, 'should have low blood pressure alert');
+  assert.strictEqual(lowAlert.severity, 'high');
+});
+
+test('SmartDashboard - detects high pulse alert', async () => {
+  const device = await createTestDevice('SD Test Device 7');
+  await bloodPressureLogger.recordReading(device.id, { 
+    systolic: 120, 
+    diastolic: 80,
+    pulse: 110
+  });
+  
+  const alerts = await smartDashboard.getHealthAlerts(device.id);
+  
+  const pulseAlert = alerts.find(a => a.type === 'high_pulse');
+  assert.ok(pulseAlert, 'should have high pulse alert');
+});
+
+test('SmartDashboard - detects low pulse alert', async () => {
+  const device = await createTestDevice('SD Test Device 8');
+  await bloodPressureLogger.recordReading(device.id, {
+    systolic: 120,
+    diastolic: 80,
+    pulse: 50
+  });
+  
+  const alerts = await smartDashboard.getHealthAlerts(device.id);
+  
+  const pulseAlert = alerts.find(a => a.type === 'low_pulse');
+  assert.ok(pulseAlert, 'should have low pulse alert');
 });
 
 test('SmartDashboard - returns no alerts for normal BP', async () => {
-  const dashboard = new TestSmartDashboard();
-  dashboard.addDevice({ id: 'device_1', name: 'Device 1' });
-  dashboard.addReading({ device_id: 'device_1', systolic: 115, diastolic: 75 });
+  const device = await createTestDevice('SD Test Device 9');
+  await bloodPressureLogger.recordReading(device.id, { systolic: 115, diastolic: 75 });
+  
+  const alerts = await smartDashboard.getHealthAlerts(device.id);
+  
+  assert.strictEqual(alerts.length, 0, 'normal BP should have no alerts');
+});
 
-  const alerts = await dashboard.getHealthAlerts('device_1');
+test('SmartDashboard - returns no alerts for device with no readings', async () => {
+  const device = await createTestDevice('SD Test Device 10');
+  
+  const alerts = await smartDashboard.getHealthAlerts(device.id);
+  
   assert.strictEqual(alerts.length, 0);
 });
 
 test('SmartDashboard - provides trend analysis', async () => {
-  const dashboard = new TestSmartDashboard();
-  dashboard.addDevice({ id: 'device_1', name: 'Device 1' });
-
-  const trends = await dashboard.getTrendAnalysis('device_1');
+  const device = await createTestDevice('SD Test Device 11');
+  
+  await bloodPressureLogger.recordReading(device.id, { systolic: 120, diastolic: 80 });
+  await bloodPressureLogger.recordReading(device.id, { systolic: 125, diastolic: 82 });
+  await bloodPressureLogger.recordReading(device.id, { systolic: 130, diastolic: 85 });
+  
+  const trends = await smartDashboard.getTrendAnalysis(device.id, '7d');
+  
   assert.ok(trends.device);
+  assert.strictEqual(trends.device.id, device.id);
+  assert.ok(trends.statistics);
   assert.ok(trends.trend);
+  assert.ok(trends.analysis);
 });
 
-test('SmartDashboard - throws error for non-existent device', async () => {
-  const dashboard = new TestSmartDashboard();
+test('SmartDashboard - exports readings as JSON', async () => {
+  const device = await createTestDevice('SD Test Device 12');
+  
+  await bloodPressureLogger.recordReading(device.id, { systolic: 120, diastolic: 80 });
+  await bloodPressureLogger.recordReading(device.id, { systolic: 130, diastolic: 85 });
+  
+  const data = await smartDashboard.exportReadings(device.id, 'json');
+  
+  assert.ok(data.device);
+  assert.strictEqual(data.device.id, device.id);
+  assert.ok(Array.isArray(data.readings));
+  assert.ok(data.readings.length >= 2);
+});
+
+test('SmartDashboard - exports readings as CSV', async () => {
+  const device = await createTestDevice('SD Test Device 13');
+  
+  await bloodPressureLogger.recordReading(device.id, { systolic: 120, diastolic: 80 });
+  
+  const csv = await smartDashboard.exportReadings(device.id, 'csv');
+  
+  assert.ok(typeof csv === 'string');
+  assert.ok(csv.includes('Systolic'));
+  assert.ok(csv.includes('120'));
+});
+
+test('SmartDashboard - rejects invalid export format', async () => {
+  const device = await createTestDevice('SD Test Device 14');
+  
   await assert.rejects(
-    () => dashboard.getDeviceDashboard('nonexistent'),
-    /Device not found/
+    () => smartDashboard.exportReadings(device.id, 'invalid'),
+    /Format must be json or csv/
   );
 });

@@ -34,8 +34,23 @@ class BloodPressureLogger {
       throw new Error('Pulse must be between 0 and 300 bpm');
     }
 
-    const readingId = generateId('reading');
     const recordedTime = measurement_time || new Date().toISOString();
+
+    // Check for duplicate reading with exact same values within the last 5 minutes
+    // to prevent re-sent readings from being stored twice
+    const fiveMinutesAgo = new Date(new Date(recordedTime).getTime() - 5 * 60 * 1000).toISOString();
+    const duplicate = await database.get(
+      `SELECT id FROM blood_pressure_readings 
+       WHERE device_id = ? AND systolic = ? AND diastolic = ? 
+       AND measurement_time >= ? AND measurement_time <= ?`,
+      [deviceId, systolic, diastolic, fiveMinutesAgo, recordedTime]
+    );
+
+    if (duplicate) {
+      throw new Error('Duplicate reading detected - this reading was already recorded');
+    }
+
+    const readingId = generateId('reading');
 
     await database.run(
       `INSERT INTO blood_pressure_readings 

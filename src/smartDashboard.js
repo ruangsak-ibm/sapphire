@@ -61,35 +61,44 @@ class SmartDashboard {
       return alerts;
     }
 
-    // High blood pressure alert
-    if (latestReading.systolic >= 140 || latestReading.diastolic >= 90) {
+    // Hypertensive Crisis - most severe
+    if (latestReading.systolic > 180 || latestReading.diastolic > 120) {
+      alerts.push({
+        type: 'hypertensive_crisis',
+        severity: 'critical',
+        message: `CRITICAL: Hypertensive crisis detected: ${latestReading.systolic}/${latestReading.diastolic}. Seek immediate medical attention.`,
+        reading_id: latestReading.id,
+        recorded_at: latestReading.measurement_time
+      });
+    }
+    // High blood pressure (Stage 2) - systolic >= 140 OR diastolic >= 90
+    else if (latestReading.systolic >= 140 || latestReading.diastolic >= 90) {
       alerts.push({
         type: 'high_blood_pressure',
         severity: 'high',
-        message: `High blood pressure detected: ${latestReading.systolic}/${latestReading.diastolic}`,
+        message: `High blood pressure detected: ${latestReading.systolic}/${latestReading.diastolic}. Consider consulting a healthcare provider.`,
         reading_id: latestReading.id,
         recorded_at: latestReading.measurement_time
       });
     }
-
-    // Elevated blood pressure alert
-    if ((latestReading.systolic >= 120 && latestReading.systolic < 140) ||
-        (latestReading.diastolic >= 80 && latestReading.diastolic < 90)) {
+    // Elevated blood pressure - systolic 120-139 AND diastolic < 80, OR diastolic 80-89 AND systolic < 140
+    else if ((latestReading.systolic >= 120 && latestReading.systolic < 140 && latestReading.diastolic < 80) ||
+             (latestReading.diastolic >= 80 && latestReading.diastolic < 90 && latestReading.systolic < 140)) {
       alerts.push({
         type: 'elevated_blood_pressure',
         severity: 'medium',
-        message: `Elevated blood pressure: ${latestReading.systolic}/${latestReading.diastolic}`,
+        message: `Elevated blood pressure: ${latestReading.systolic}/${latestReading.diastolic}. Monitor regularly.`,
         reading_id: latestReading.id,
         recorded_at: latestReading.measurement_time
       });
     }
 
-    // Low blood pressure alert
+    // Low blood pressure - systolic < 90 OR diastolic < 60
     if (latestReading.systolic < 90 || latestReading.diastolic < 60) {
       alerts.push({
         type: 'low_blood_pressure',
         severity: 'high',
-        message: `Low blood pressure detected: ${latestReading.systolic}/${latestReading.diastolic}`,
+        message: `Low blood pressure detected: ${latestReading.systolic}/${latestReading.diastolic}. Consult a healthcare provider if symptoms persist.`,
         reading_id: latestReading.id,
         recorded_at: latestReading.measurement_time
       });
@@ -100,18 +109,18 @@ class SmartDashboard {
       alerts.push({
         type: 'high_pulse',
         severity: 'medium',
-        message: `High pulse rate: ${latestReading.pulse} bpm`,
+        message: `High pulse rate: ${latestReading.pulse} bpm. Rest and monitor.`,
         reading_id: latestReading.id,
         recorded_at: latestReading.measurement_time
       });
     }
 
     // Low pulse alert
-    if (latestReading.pulse && latestReading.pulse < 60) {
+    if (latestReading.pulse && latestReading.pulse < 60 && latestReading.pulse > 0) {
       alerts.push({
         type: 'low_pulse',
         severity: 'medium',
-        message: `Low pulse rate: ${latestReading.pulse} bpm`,
+        message: `Low pulse rate: ${latestReading.pulse} bpm. Consult a healthcare provider if symptoms present.`,
         reading_id: latestReading.id,
         recorded_at: latestReading.measurement_time
       });

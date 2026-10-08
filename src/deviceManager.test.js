@@ -1,147 +1,157 @@
 /**
- * Integration tests for device manager
+ * Integration tests for device manager - tests the real implementation
  */
 const { test } = require('node:test');
 const assert = require('node:assert');
+const database = require('./database');
+const deviceManager = require('./deviceManager');
 
-// Mock database for testing
-const mockDb = {
-  async run(sql, params = []) {
-    return { id: 1, changes: 1 };
-  },
-  async get(sql, params = []) {
-    if (sql.includes('SELECT * FROM devices WHERE id =')) {
-      return {
-        id: params[0],
-        name: 'Test Device',
-        type: 'blood_pressure',
-        manufacturer: 'Test',
-        model: 'Model X',
-        serial_number: 'SN123',
-        status: 'active',
-        last_sync: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-    }
-    if (sql.includes('SELECT id FROM devices WHERE serial_number =')) {
-      return null; // No duplicate
-    }
-    return null;
-  },
-  async all(sql, params = []) {
-    return [];
-  }
-};
-
-// Minimal device manager for testing
-class TestDeviceManager {
-  async registerDevice(deviceInfo) {
-    if (!deviceInfo) throw new Error('Invalid device information');
-    if (!deviceInfo.name || !deviceInfo.type) throw new Error('Device name and type are required');
-    if (!deviceInfo.serial_number) throw new Error('Device serial number is required');
-
-    const deviceId = `device_${Date.now()}`;
-    await mockDb.run('INSERT INTO devices VALUES ()', []);
-    return {
-      id: deviceId,
-      ...deviceInfo,
-      status: 'active'
-    };
-  }
-
-  async getDevice(deviceId) {
-    if (!deviceId) throw new Error('Device ID is required');
-    const device = await mockDb.get('SELECT * FROM devices WHERE id = ?', [deviceId]);
-    if (!device) throw new Error(`Device not found: ${deviceId}`);
-    return device;
-  }
-
-  async listDevices(filter = {}) {
-    return mockDb.all('SELECT * FROM devices', []);
-  }
-
-  async updateDeviceStatus(deviceId, status) {
-    if (!['active', 'inactive', 'error'].includes(status)) {
-      throw new Error('Invalid status');
-    }
-    return this.getDevice(deviceId);
-  }
-}
+// Initialize database before tests
+test('DeviceManager - setup database', async () => {
+  await database.initialize();
+  assert.ok(true, 'database initialized');
+});
 
 test('DeviceManager - registers device with valid info', async () => {
-  const manager = new TestDeviceManager();
-  const device = await manager.registerDevice({
+  const device = await deviceManager.registerDevice({
     name: 'My BP Monitor',
     type: 'blood_pressure',
     manufacturer: 'Omron',
     model: 'BP-100',
-    serial_number: 'SN12345'
+    serial_number: 'SN_UNIQUE_REG_' + Date.now() + '_' + Math.random()
   });
 
   assert.ok(device.id);
+  assert.ok(device.id.startsWith('device_'));
   assert.strictEqual(device.name, 'My BP Monitor');
   assert.strictEqual(device.type, 'blood_pressure');
   assert.strictEqual(device.status, 'active');
 });
 
 test('DeviceManager - rejects invalid device info', async () => {
-  const manager = new TestDeviceManager();
   await assert.rejects(
-    () => manager.registerDevice(null),
+    () => deviceManager.registerDevice(null),
     /Invalid device information/
   );
 });
 
 test('DeviceManager - requires device name and type', async () => {
-  const manager = new TestDeviceManager();
   await assert.rejects(
-    () => manager.registerDevice({ serial_number: 'SN123' }),
+    () => deviceManager.registerDevice({ serial_number: 'SN123' }),
     /name and type are required/
   );
 });
 
 test('DeviceManager - requires serial number', async () => {
-  const manager = new TestDeviceManager();
   await assert.rejects(
-    () => manager.registerDevice({ name: 'Device', type: 'bp' }),
+    () => deviceManager.registerDevice({ name: 'Device', type: 'bp' }),
     /serial number is required/
   );
 });
 
-test('DeviceManager - rejects invalid status', async () => {
-  const manager = new TestDeviceManager();
+test('DeviceManager - prevents duplicate serial numbers', async () => {
+  const serialNum = 'SN_UNIQUE_DUP_' + Date.now();
+  
+  // Register first device
+  await deviceManager.registerDevice({
+    name: 'Device 1',
+    type: 'blood_pressure',
+    serial_number: serialNum
+  });
+
+  // Try to register second device with same serial number
   await assert.rejects(
-    () => manager.updateDeviceStatus('device_123', 'invalid'),
-    /Invalid status/
+    () => deviceManager.registerDevice({
+      name: 'Device 2',
+      type: 'blood_pressure',
+      serial_number: serialNum
+    }),
+    /already exists/
   );
 });
 
 test('DeviceManager - gets device by ID', async () => {
-  const manager = new TestDeviceManager();
-  const device = await manager.getDevice('device_123');
+  const registered = await deviceManager.registerDevice({
+    name: 'Retrievable Device',
+    type: 'blood_pressure',
+    serial_number: 'SN_RETRIEVE_' + Date.now()
+  });
+
+  const device = await deviceManager.getDevice(registered.id);
   assert.ok(device);
-  assert.strictEqual(device.id, 'device_123');
+  assert.strictEqual(device.id, registered.id);
+  assert.strictEqual(device.name, 'Retrievable Device');
 });
 
 test('DeviceManager - throws error for non-existent device', async () => {
-  const mockDbNoResult = {
-    async get(sql, params = []) {
-      return null;
-    }
-  };
-
-  class TestDeviceManager2 {
-    async getDevice(deviceId) {
-      const device = await mockDbNoResult.get('SELECT * FROM devices WHERE id = ?', [deviceId]);
-      if (!device) throw new Error(`Device not found: ${deviceId}`);
-      return device;
-    }
-  }
-
-  const manager = new TestDeviceManager2();
   await assert.rejects(
-    () => manager.getDevice('nonexistent'),
+    () => deviceManager.getDevice('nonexistent_device_id'),
+    /Device not found/
+  );
+});
+
+test('DeviceManager - lists devices', async () => {
+  const devices = await deviceManager.listDevices();
+  assert.ok(Array.isArray(devices));
+  assert.ok(devices.length > 0, 'should have at least one device');
+});
+
+test('DeviceManager - filters devices by status', async () => {
+  const activeDevices = await deviceManager.listDevices({ status: 'active' });
+  assert.ok(Array.isArray(activeDevices));
+  assert.ok(activeDevices.every(d => d.status === 'active'));
+});
+
+test('DeviceManager - updates device status', async () => {
+  const device = await deviceManager.registerDevice({
+    name: 'Status Test Device',
+    type: 'blood_pressure',
+    serial_number: 'SN_STATUS_' + Date.now()
+  });
+
+  const updated = await deviceManager.updateDeviceStatus(device.id, 'inactive');
+  assert.strictEqual(updated.status, 'inactive');
+});
+
+test('DeviceManager - rejects invalid status', async () => {
+  const device = await deviceManager.registerDevice({
+    name: 'Invalid Status Device',
+    type: 'blood_pressure',
+    serial_number: 'SN_INVALID_STATUS_' + Date.now()
+  });
+
+  await assert.rejects(
+    () => deviceManager.updateDeviceStatus(device.id, 'invalid_status'),
+    /Invalid status/
+  );
+});
+
+test('DeviceManager - updates last sync time', async () => {
+  const device = await deviceManager.registerDevice({
+    name: 'Sync Test Device',
+    type: 'blood_pressure',
+    serial_number: 'SN_SYNC_' + Date.now()
+  });
+
+  const syncTime = new Date().toISOString();
+  const updated = await deviceManager.updateLastSync(device.id, syncTime);
+  assert.strictEqual(updated.last_sync, syncTime);
+});
+
+test('DeviceManager - removes device', async () => {
+  const device = await deviceManager.registerDevice({
+    name: 'Device to Delete',
+    type: 'blood_pressure',
+    serial_number: 'SN_DELETE_' + Date.now()
+  });
+
+  const result = await deviceManager.removeDevice(device.id);
+  assert.ok(result.deleted);
+  assert.strictEqual(result.deviceId, device.id);
+
+  // Verify device is deleted
+  await assert.rejects(
+    () => deviceManager.getDevice(device.id),
     /Device not found/
   );
 });
