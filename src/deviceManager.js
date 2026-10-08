@@ -3,6 +3,7 @@
  */
 const database = require('./database');
 const { generateId } = require('./utils');
+const { ValidationError, NotFoundError, ConflictError } = require('./errors');
 
 class DeviceManager {
   /**
@@ -10,36 +11,41 @@ class DeviceManager {
    */
   async registerDevice(deviceInfo) {
     if (!deviceInfo || typeof deviceInfo !== 'object') {
-      throw new Error('Invalid device information');
+      throw new ValidationError('Invalid device information');
     }
 
     const { name, type, manufacturer, model, serial_number } = deviceInfo;
 
     if (!name || !type) {
-      throw new Error('Device name and type are required');
+      throw new ValidationError('Device name and type are required');
     }
 
     if (!serial_number) {
-      throw new Error('Device serial number is required');
-    }
-
-    // Check for duplicate serial number
-    const existing = await database.get(
-      'SELECT id FROM devices WHERE serial_number = ?',
-      [serial_number]
-    );
-
-    if (existing) {
-      throw new Error('Device with this serial number already exists');
+      throw new ValidationError('Device serial number is required');
     }
 
     const deviceId = generateId('device');
 
-    await database.run(
-      `INSERT INTO devices (id, name, type, manufacturer, model, serial_number, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'active')`,
-      [deviceId, name, type, manufacturer || null, model || null, serial_number]
-    );
+    // Use atomic transaction to check for duplicates and insert
+    // This prevents race conditions where two devices with the same serial number could be created
+    await database.transaction(async () => {
+      // Check for duplicate serial number
+      const existing = await database.get(
+        'SELECT id FROM devices WHERE serial_number = ?',
+        [serial_number]
+      );
+
+      if (existing) {
+        throw new ConflictError('Device with this serial number already exists');
+      }
+
+      // Insert the device
+      await database.run(
+        `INSERT INTO devices (id, name, type, manufacturer, model, serial_number, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'active')`,
+        [deviceId, name, type, manufacturer || null, model || null, serial_number]
+      );
+    });
 
     return this.getDevice(deviceId);
   }
@@ -49,7 +55,7 @@ class DeviceManager {
    */
   async getDevice(deviceId) {
     if (!deviceId) {
-      throw new Error('Device ID is required');
+      throw new ValidationError('Device ID is required');
     }
 
     const device = await database.get(
@@ -58,7 +64,7 @@ class DeviceManager {
     );
 
     if (!device) {
-      throw new Error(`Device not found: ${deviceId}`);
+      throw new NotFoundError(`Device not found: ${deviceId}`);
     }
 
     return device;
@@ -86,7 +92,7 @@ class DeviceManager {
    */
   async updateLastSync(deviceId, timestamp = null) {
     if (!deviceId) {
-      throw new Error('Device ID is required');
+      throw new ValidationError('Device ID is required');
     }
 
     const syncTime = timestamp || new Date().toISOString();
@@ -104,11 +110,11 @@ class DeviceManager {
    */
   async updateDeviceStatus(deviceId, status) {
     if (!deviceId) {
-      throw new Error('Device ID is required');
+      throw new ValidationError('Device ID is required');
     }
 
     if (!['active', 'inactive', 'error'].includes(status)) {
-      throw new Error('Invalid status. Must be one of: active, inactive, error');
+      throw new ValidationError('Invalid status. Must be one of: active, inactive, error');
     }
 
     await database.run(
@@ -124,7 +130,7 @@ class DeviceManager {
    */
   async removeDevice(deviceId) {
     if (!deviceId) {
-      throw new Error('Device ID is required');
+      throw new ValidationError('Device ID is required');
     }
 
     const device = await this.getDevice(deviceId);

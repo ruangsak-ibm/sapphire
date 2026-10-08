@@ -3,6 +3,7 @@
  */
 const express = require('express');
 const bloodPressureLogger = require('../bloodPressureLogger');
+const { ValidationError, NotFoundError, ConflictError } = require('../errors');
 
 const router = express.Router();
 
@@ -27,14 +28,26 @@ router.post('/', async (req, res) => {
       data: reading
     });
   } catch (error) {
-    // Handle duplicate reading error specifically
-    if (error.message && error.message.includes('Duplicate reading')) {
+    // Handle specific error types
+    if (error instanceof ConflictError) {
       return res.status(409).json({
         success: false,
         error: error.message
       });
     }
-    res.status(400).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error instanceof ValidationError) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -53,7 +66,13 @@ router.get('/:id', async (req, res) => {
       data: reading
     });
   } catch (error) {
-    res.status(404).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -72,7 +91,13 @@ router.delete('/:id', async (req, res) => {
       data: result
     });
   } catch (error) {
-    res.status(404).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });

@@ -3,6 +3,7 @@
  */
 const express = require('express');
 const smartDashboard = require('../smartDashboard');
+const { ValidationError, NotFoundError } = require('../errors');
 
 const router = express.Router();
 
@@ -37,7 +38,13 @@ router.get('/device/:deviceId', async (req, res) => {
       data: dashboard
     });
   } catch (error) {
-    res.status(404).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -57,7 +64,13 @@ router.get('/device/:deviceId/alerts', async (req, res) => {
       data: alerts
     });
   } catch (error) {
-    res.status(404).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -77,7 +90,19 @@ router.get('/device/:deviceId/trends', async (req, res) => {
       data: trends
     });
   } catch (error) {
-    res.status(404).json({
+    if (error instanceof ValidationError) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -104,7 +129,19 @@ router.get('/device/:deviceId/export', async (req, res) => {
       });
     }
   } catch (error) {
-    res.status(404).json({
+    if (error instanceof ValidationError) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });

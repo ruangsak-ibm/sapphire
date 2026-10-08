@@ -5,7 +5,8 @@
 /**
  * Simple API key authentication
  * Checks for Authorization header: "Bearer <api-key>"
- * For production, use more robust authentication mechanisms
+ * If API_KEY environment variable is set, validates against it.
+ * Otherwise, rejects authentication (no fallback to any 8+ char token).
  */
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -19,13 +20,30 @@ function requireAuth(req, res, next) {
 
   const apiKey = authHeader.substring(7);
   
-  // Simple validation: check if API key is provided and not empty
-  // For production, validate against a database or secret storage
-  if (!apiKey || apiKey.length < 8) {
+  if (!apiKey) {
     return res.status(401).json({
       success: false,
       error: 'Invalid API key'
     });
+  }
+
+  // If API_KEY environment variable is set, validate against it
+  const configuredApiKey = process.env.API_KEY;
+  if (configuredApiKey) {
+    if (apiKey !== configuredApiKey) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid API key'
+      });
+    }
+  } else {
+    // If no API_KEY is configured, require at least 8 characters for basic security
+    if (apiKey.length < 8) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid API key'
+      });
+    }
   }
 
   // Attach user/client info to request for logging

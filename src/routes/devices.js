@@ -5,6 +5,7 @@ const express = require('express');
 const deviceManager = require('../deviceManager');
 const bloodPressureLogger = require('../bloodPressureLogger');
 const healthIndicatorManager = require('../healthIndicatorManager');
+const { ValidationError, NotFoundError, ConflictError } = require('../errors');
 
 const router = express.Router();
 
@@ -21,7 +22,19 @@ router.post('/', async (req, res) => {
       data: device
     });
   } catch (error) {
-    res.status(400).json({
+    if (error instanceof ConflictError) {
+      return res.status(409).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error instanceof ValidationError) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -64,7 +77,13 @@ router.get('/:id', async (req, res) => {
       data: device
     });
   } catch (error) {
-    res.status(404).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -90,7 +109,19 @@ router.patch('/:id/status', async (req, res) => {
       data: device
     });
   } catch (error) {
-    res.status(400).json({
+    if (error instanceof ValidationError) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -109,7 +140,13 @@ router.delete('/:id', async (req, res) => {
       data: result
     });
   } catch (error) {
-    res.status(404).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -134,7 +171,19 @@ router.get('/:deviceId/readings', async (req, res) => {
       data: readings
     });
   } catch (error) {
-    res.status(400).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error instanceof ValidationError) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -153,7 +202,13 @@ router.get('/:deviceId/readings/latest', async (req, res) => {
       data: reading
     });
   } catch (error) {
-    res.status(400).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -173,7 +228,19 @@ router.get('/:deviceId/readings/stats', async (req, res) => {
       data: stats
     });
   } catch (error) {
-    res.status(400).json({
+    if (error instanceof ValidationError) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -197,7 +264,13 @@ router.get('/:deviceId/indicators', async (req, res) => {
       data: indicators
     });
   } catch (error) {
-    res.status(400).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });

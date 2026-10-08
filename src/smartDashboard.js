@@ -5,6 +5,7 @@ const database = require('./database');
 const deviceManager = require('./deviceManager');
 const bloodPressureLogger = require('./bloodPressureLogger');
 const healthIndicatorManager = require('./healthIndicatorManager');
+const { ValidationError } = require('./errors');
 
 class SmartDashboard {
   /**
@@ -93,8 +94,8 @@ class SmartDashboard {
       });
     }
 
-    // Low blood pressure - systolic < 90 OR diastolic < 60
-    if (latestReading.systolic < 90 || latestReading.diastolic < 60) {
+    // Low blood pressure - both systolic < 90 AND diastolic < 60
+    if (latestReading.systolic < 90 && latestReading.diastolic < 60) {
       alerts.push({
         type: 'low_blood_pressure',
         severity: 'high',
@@ -139,10 +140,40 @@ class SmartDashboard {
       limit: 1000 
     });
 
-    // Calculate trends
-    const midpoint = Math.floor(readings.length / 2);
-    const firstHalf = readings.slice(midpoint);
-    const secondHalf = readings.slice(0, midpoint);
+    if (readings.length === 0) {
+      return {
+        device,
+        timeframe,
+        statistics,
+        trend: {
+          systolic: 'insufficient_data',
+          readingsCount: 0
+        },
+        analysis: 'Insufficient data for trend analysis'
+      };
+    }
+
+    // With fewer than 2 readings, we cannot determine a meaningful trend
+    if (readings.length < 2) {
+      return {
+        device,
+        timeframe,
+        statistics,
+        trend: {
+          systolic: 'insufficient_data',
+          readingsCount: readings.length
+        },
+        analysis: 'Insufficient data for trend analysis - need at least 2 readings'
+      };
+    }
+
+    // Reverse to get chronological order (getDeviceReadings returns DESC)
+    const chronologicalReadings = readings.reverse();
+
+    // Split into two halves to compare earlier vs later readings
+    const midpoint = Math.floor(chronologicalReadings.length / 2);
+    const firstHalf = chronologicalReadings.slice(0, midpoint);
+    const secondHalf = chronologicalReadings.slice(midpoint);
 
     const avgFirstSystolic = firstHalf.length > 0 
       ? firstHalf.reduce((sum, r) => sum + r.systolic, 0) / firstHalf.length 
@@ -151,7 +182,7 @@ class SmartDashboard {
       ? secondHalf.reduce((sum, r) => sum + r.systolic, 0) / secondHalf.length
       : 0;
 
-    const systolicTrend = avgFirstSystolic > avgSecondSystolic ? 'increasing' : 'decreasing';
+    const systolicTrend = avgSecondSystolic > avgFirstSystolic ? 'increasing' : 'decreasing';
 
     return {
       device,
@@ -159,7 +190,9 @@ class SmartDashboard {
       statistics,
       trend: {
         systolic: systolicTrend,
-        readingsCount: readings.length
+        readingsCount: readings.length,
+        avgFirst: Math.round(avgFirstSystolic),
+        avgSecond: Math.round(avgSecondSystolic)
       },
       analysis: this._generateTrendAnalysis(systolicTrend, statistics)
     };
@@ -170,7 +203,7 @@ class SmartDashboard {
    */
   async exportReadings(deviceId, format = 'json') {
     if (!['json', 'csv'].includes(format)) {
-      throw new Error('Format must be json or csv');
+      throw new ValidationError('Format must be json or csv');
     }
 
     const device = await deviceManager.getDevice(deviceId);

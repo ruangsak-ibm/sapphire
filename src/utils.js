@@ -1,13 +1,14 @@
 /**
  * Utility functions
  */
+const { ValidationError } = require('./errors');
 
 /**
  * Generate unique IDs with prefixes for different entity types
  */
 function generateId(prefix) {
   if (!prefix) {
-    throw new Error('Prefix is required for ID generation');
+    throw new ValidationError('Prefix is required for ID generation');
   }
 
   const timestamp = Date.now().toString(36);
@@ -20,19 +21,19 @@ function generateId(prefix) {
  */
 function validateBloodPressure(systolic, diastolic) {
   if (typeof systolic !== 'number' || typeof diastolic !== 'number') {
-    throw new Error('Systolic and diastolic must be numbers');
+    throw new ValidationError('Systolic and diastolic must be numbers');
   }
 
   if (systolic < 0 || systolic > 300) {
-    throw new Error('Systolic must be between 0 and 300 mmHg');
+    throw new ValidationError('Systolic must be between 0 and 300 mmHg');
   }
 
   if (diastolic < 0 || diastolic > 200) {
-    throw new Error('Diastolic must be between 0 and 200 mmHg');
+    throw new ValidationError('Diastolic must be between 0 and 200 mmHg');
   }
 
   if (systolic < diastolic) {
-    throw new Error('Systolic must be greater than or equal to diastolic');
+    throw new ValidationError('Systolic must be greater than or equal to diastolic');
   }
 }
 

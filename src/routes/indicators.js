@@ -3,6 +3,7 @@
  */
 const express = require('express');
 const healthIndicatorManager = require('../healthIndicatorManager');
+const { ValidationError, NotFoundError } = require('../errors');
 
 const router = express.Router();
 
@@ -27,7 +28,19 @@ router.post('/', async (req, res) => {
       data: indicator
     });
   } catch (error) {
-    res.status(400).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error instanceof ValidationError) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -46,7 +59,13 @@ router.get('/:id', async (req, res) => {
       data: indicator
     });
   } catch (error) {
-    res.status(404).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });
@@ -65,7 +84,13 @@ router.delete('/:id', async (req, res) => {
       data: result
     });
   } catch (error) {
-    res.status(404).json({
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    res.status(500).json({
       success: false,
       error: error.message
     });

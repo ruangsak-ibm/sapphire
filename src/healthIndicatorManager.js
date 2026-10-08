@@ -4,6 +4,7 @@
 const database = require('./database');
 const deviceManager = require('./deviceManager');
 const { generateId } = require('./utils');
+const { ValidationError, NotFoundError } = require('./errors');
 
 class HealthIndicatorManager {
   /**
@@ -11,11 +12,11 @@ class HealthIndicatorManager {
    */
   async recordIndicator(deviceId, indicatorData) {
     if (!deviceId) {
-      throw new Error('Device ID is required');
+      throw new ValidationError('Device ID is required');
     }
 
     if (!indicatorData || typeof indicatorData !== 'object') {
-      throw new Error('Invalid indicator data');
+      throw new ValidationError('Invalid indicator data');
     }
 
     // Verify device exists
@@ -24,15 +25,15 @@ class HealthIndicatorManager {
     const { indicator_type, value, unit } = indicatorData;
 
     if (!indicator_type) {
-      throw new Error('Indicator type is required');
+      throw new ValidationError('Indicator type is required');
     }
 
     if (value === undefined || value === null) {
-      throw new Error('Indicator value is required');
+      throw new ValidationError('Indicator value is required');
     }
 
     if (typeof value !== 'number') {
-      throw new Error('Indicator value must be a number');
+      throw new ValidationError('Indicator value must be a number');
     }
 
     const indicatorId = generateId('indicator');
@@ -51,7 +52,7 @@ class HealthIndicatorManager {
    */
   async getIndicator(indicatorId) {
     if (!indicatorId) {
-      throw new Error('Indicator ID is required');
+      throw new ValidationError('Indicator ID is required');
     }
 
     const indicator = await database.get(
@@ -60,7 +61,7 @@ class HealthIndicatorManager {
     );
 
     if (!indicator) {
-      throw new Error(`Indicator not found: ${indicatorId}`);
+      throw new NotFoundError(`Indicator not found: ${indicatorId}`);
     }
 
     return indicator;
@@ -71,7 +72,7 @@ class HealthIndicatorManager {
    */
   async getDeviceIndicators(deviceId, filter = {}) {
     if (!deviceId) {
-      throw new Error('Device ID is required');
+      throw new ValidationError('Device ID is required');
     }
 
     // Verify device exists
@@ -101,7 +102,7 @@ class HealthIndicatorManager {
    */
   async deleteIndicator(indicatorId) {
     if (!indicatorId) {
-      throw new Error('Indicator ID is required');
+      throw new ValidationError('Indicator ID is required');
     }
 
     await this.getIndicator(indicatorId);

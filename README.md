@@ -31,7 +31,7 @@ npm install
 Set environment variables to customize:
 
 - `PORT`: Server port (default: 3000)
-- `API_KEY`: (Optional) API key for authentication. If not set, any non-empty Bearer token of at least 8 characters is accepted.
+- `API_KEY`: (Optional) If set, this is the required API key for authentication. If not set, any non-empty Bearer token of at least 8 characters is accepted for basic security.
 - Database location can be modified in `src/database.js` (default: `data/health.db`)
 
 ## Authentication
@@ -385,13 +385,6 @@ All API responses follow a consistent format:
   "error": "Error message"
 }
 ```
-
-## Configuration
-
-Set environment variables to customize:
-
-- `PORT`: Server port (default: 3000)
-- Database location can be modified in `src/database.js` (default: `data/health.db`)
 
 ## Security Considerations
 

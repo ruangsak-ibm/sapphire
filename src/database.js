@@ -24,6 +24,9 @@ class Database {
         if (err) {
           reject(err);
         } else {
+          // Set busy timeout to 5 seconds for test execution
+          // SQLite SQLITE_BUSY errors can occur under high concurrency, but are rare in production
+          this.db.configure('busyTimeout', 5000);
           this.createTables().then(resolve).catch(reject);
         }
       });
@@ -123,6 +126,27 @@ class Database {
         resolve();
       }
     });
+  }
+
+  /**
+   * Execute a transaction with callback
+   * Ensures all operations in the callback are atomic
+   */
+  async transaction(callback) {
+    await this.run('BEGIN TRANSACTION');
+    try {
+      const result = await callback();
+      await this.run('COMMIT');
+      return result;
+    } catch (error) {
+      try {
+        await this.run('ROLLBACK');
+      } catch (rollbackError) {
+        // Log the rollback error but re-throw the original error
+        console.error('Failed to rollback transaction:', rollbackError);
+      }
+      throw error;
+    }
   }
 }
 

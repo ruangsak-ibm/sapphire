@@ -4,6 +4,7 @@
 const database = require('./database');
 const deviceManager = require('./deviceManager');
 const { generateId, validateBloodPressure } = require('./utils');
+const { ValidationError, NotFoundError, ConflictError } = require('./errors');
 
 class BloodPressureLogger {
   /**
@@ -11,11 +12,11 @@ class BloodPressureLogger {
    */
   async recordReading(deviceId, readingData) {
     if (!deviceId) {
-      throw new Error('Device ID is required');
+      throw new ValidationError('Device ID is required');
     }
 
     if (!readingData || typeof readingData !== 'object') {
-      throw new Error('Invalid reading data');
+      throw new ValidationError('Invalid reading data');
     }
 
     // Verify device exists
@@ -25,44 +26,50 @@ class BloodPressureLogger {
 
     // Validate blood pressure values
     if (systolic === undefined || diastolic === undefined) {
-      throw new Error('Systolic and diastolic readings are required');
+      throw new ValidationError('Systolic and diastolic readings are required');
     }
 
     validateBloodPressure(systolic, diastolic);
 
     if (pulse !== undefined && (pulse < 0 || pulse > 300)) {
-      throw new Error('Pulse must be between 0 and 300 bpm');
+      throw new ValidationError('Pulse must be between 0 and 300 bpm');
     }
 
     const recordedTime = measurement_time || new Date().toISOString();
-
-    // Check for duplicate reading with exact same values within the last 5 minutes
-    // to prevent re-sent readings from being stored twice
-    const fiveMinutesAgo = new Date(new Date(recordedTime).getTime() - 5 * 60 * 1000).toISOString();
-    const duplicate = await database.get(
-      `SELECT id FROM blood_pressure_readings 
-       WHERE device_id = ? AND systolic = ? AND diastolic = ? 
-       AND measurement_time >= ? AND measurement_time <= ?`,
-      [deviceId, systolic, diastolic, fiveMinutesAgo, recordedTime]
-    );
-
-    if (duplicate) {
-      throw new Error('Duplicate reading detected - this reading was already recorded');
-    }
-
     const readingId = generateId('reading');
 
-    await database.run(
-      `INSERT INTO blood_pressure_readings 
-       (id, device_id, systolic, diastolic, pulse, measurement_time, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [readingId, deviceId, systolic, diastolic, pulse || null, recordedTime, notes || null]
-    );
+    // Use atomic transaction to check for duplicates and insert
+    // This prevents race conditions where two identical readings could be recorded
+    const result = await database.transaction(async () => {
+      // Check for duplicate reading with exact same values within the last 5 minutes
+      // to prevent re-sent readings from being stored twice
+      const fiveMinutesAgo = new Date(new Date(recordedTime).getTime() - 5 * 60 * 1000).toISOString();
+      const duplicate = await database.get(
+        `SELECT id FROM blood_pressure_readings 
+         WHERE device_id = ? AND systolic = ? AND diastolic = ? 
+         AND measurement_time >= ? AND measurement_time <= ?`,
+        [deviceId, systolic, diastolic, fiveMinutesAgo, recordedTime]
+      );
 
-    // Update device last sync
-    await deviceManager.updateLastSync(deviceId, recordedTime);
+      if (duplicate) {
+        throw new ConflictError('Duplicate reading detected - this reading was already recorded');
+      }
 
-    return this.getReading(readingId);
+      // Insert the reading
+      await database.run(
+        `INSERT INTO blood_pressure_readings 
+         (id, device_id, systolic, diastolic, pulse, measurement_time, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [readingId, deviceId, systolic, diastolic, pulse || null, recordedTime, notes || null]
+      );
+
+      // Update device last sync
+      await deviceManager.updateLastSync(deviceId, recordedTime);
+
+      return readingId;
+    });
+
+    return this.getReading(result);
   }
 
   /**
@@ -70,7 +77,7 @@ class BloodPressureLogger {
    */
   async getReading(readingId) {
     if (!readingId) {
-      throw new Error('Reading ID is required');
+      throw new ValidationError('Reading ID is required');
     }
 
     const reading = await database.get(
@@ -79,7 +86,7 @@ class BloodPressureLogger {
     );
 
     if (!reading) {
-      throw new Error(`Reading not found: ${readingId}`);
+      throw new NotFoundError(`Reading not found: ${readingId}`);
     }
 
     return reading;
@@ -90,7 +97,7 @@ class BloodPressureLogger {
    */
   async getDeviceReadings(deviceId, filter = {}) {
     if (!deviceId) {
-      throw new Error('Device ID is required');
+      throw new ValidationError('Device ID is required');
     }
 
     // Verify device exists
@@ -123,7 +130,7 @@ class BloodPressureLogger {
    */
   async getLatestReading(deviceId) {
     if (!deviceId) {
-      throw new Error('Device ID is required');
+      throw new ValidationError('Device ID is required');
     }
 
     // Verify device exists
@@ -145,7 +152,7 @@ class BloodPressureLogger {
    */
   async getReadingStatistics(deviceId, timeframe = '7d') {
     if (!deviceId) {
-      throw new Error('Device ID is required');
+      throw new ValidationError('Device ID is required');
     }
 
     // Verify device exists
@@ -206,7 +213,7 @@ class BloodPressureLogger {
    */
   async deleteReading(readingId) {
     if (!readingId) {
-      throw new Error('Reading ID is required');
+      throw new ValidationError('Reading ID is required');
     }
 
     const reading = await this.getReading(readingId);
@@ -222,7 +229,7 @@ class BloodPressureLogger {
   _parseTimeframe(timeframe) {
     const match = timeframe.match(/^(\d+)([dhm])$/);
     if (!match) {
-      throw new Error('Invalid timeframe format. Use format like "7d", "30d", "24h"');
+      throw new ValidationError('Invalid timeframe format. Use format like "7d", "30d", "24h"');
     }
 
     const value = parseInt(match[1]);
@@ -236,7 +243,7 @@ class BloodPressureLogger {
       case 'm':
         return value / (24 * 60);
       default:
-        throw new Error('Invalid timeframe unit');
+        throw new ValidationError('Invalid timeframe unit');
     }
   }
 }
